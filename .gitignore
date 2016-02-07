@@ -27,6 +27,12 @@
 *.i*86
 *.x86_64
 *.hex
+aux/dumbfs-outside/dumbfs-outside
+aux/iface-shm-outside/iface-shm-outside
+kernel/kernel
+samples/pci/sample-pci
+samples/simple/sample-simple
+samples/timer/sample-timer
 
 # Debug files
 *.dSYM/
