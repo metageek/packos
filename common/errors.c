@@ -1,0 +1,104 @@
+#include <packos/errors.h>
+
+const char* PackosErrorToString(PackosError error)
+{
+  switch (error)
+    {
+    case packosErrorNone: return "None";
+    case packosErrorUnknownError: return "UnknownError";
+    case packosErrorUnknownIOError: return "UnknownIOError";
+    case packosErrorNotImplemented: return "NotImplemented";
+    case packosErrorInvalidArg: return "InvalidArg";
+    case packosErrorDoesNotExist: return "DoesNotExist";
+    case packosErrorEndOfFile: return "EndOfFile";
+    case packosErrorResourceInUse: return "ResourceInUse";
+    case packosErrorResourceNotInUse: return "ResourceNotInUse";
+    case packosErrorValueChanged: return "ValueChanged";
+    case packosErrorAlreadyFreed: return "AlreadyFreed";
+    case packosErrorOutOfMemory: return "OutOfMemory";
+    case packosErrorOutOfDisk: return "OutOfDisk";
+    case packosErrorOutOfOther: return "OutOfOther";
+    case packosErrorIsDirectory: return "IsDirectory";
+    case packosErrorIsNotDirectory: return "IsNotDirectory";
+    case packosErrorTooManyRedirects: return "TooManyRedirects";
+    case packosErrorCrossFilesystemMove: return "CrossFilesystemMove";
+    case packosErrorDirectoryNotEmpty: return "DirectoryNotEmpty";
+    case packosErrorNameTooLong: return "NameTooLong";
+    case packosErrorPageAlreadyMapped: return "PageAlreadyMapped";
+    case packosErrorPageAlreadyInstalled: return "PageAlreadyInstalled";
+    case packosErrorPageAlreadyInited: return "PageAlreadyInited";
+    case packosErrorNoPacketAvail: return "NoPacketAvail";
+    case packosErrorPacketQueueFull: return "PacketQueueFull";
+    case packosErrorAddrRegistryFull: return "AddrRegistryFull";
+    case packosErrorAddrUnregistered: return "AddrUnregistered";
+    case packosErrorAddrInUse: return "AddrInUse";
+    case packosErrorNoCurrentContext: return "NoCurrentContext";
+    case packosErrorContextFinished: return "ContextFinished";
+    case packosErrorNoSuchInterrupt: return "NoSuchInterrupt";
+    case packosErrorContextNameTooLong: return "ContextNameTooLong";
+    case packosErrorOutOfContexts: return "OutOfContexts";
+    case packosErrorContextYieldedBack: return "ContextYieldedBack";
+    case packosErrorNoSuchInterruptAlias: return "NoSuchInterruptAlias";
+    case packosErrorNoInterruptsAvail: return "NoInterruptsAvail";
+    case packosErrorHeaderOutOfOrder: return "HeaderOutOfOrder";
+    case packosErrorOptionNotSupported: return "OptionNotSupported";
+    case packosErrorRoutingNotSupported: return "RoutingNotSupported";
+    case packosErrorFragmentsNotSupported: return "FragmentsNotSupported";
+    case packosErrorIfaceAlreadyRegistered: return "IfaceAlreadyRegistered";
+    case packosErrorIfaceNotRegistered: return "IfaceNotRegistered";
+    case packosErrorPortAlreadyBound: return "PortAlreadyBound";
+    case packosErrorAllAnonPortsBound: return "AllAnonPortsBound";
+    case packosErrorSocketAlreadyInUse: return "SocketAlreadyInUse";
+    case packosErrorSocketNotListening: return "SocketNotListening";
+    case packosErrorSocketNotBound: return "SocketNotBound";
+    case packosErrorWrongProtocol: return "WrongProtocol";
+    case packosErrorWrongProtocolVersion: return "WrongProtocolVersion";
+    case packosErrorBadProtocolCmd: return "BadProtocolCmd";
+    case packosErrorProtocolError: return "ProtocolError";
+    case packosErrorNoDestPort: return "NoDestPort";
+    case packosErrorNoRouteToHost: return "NoRouteToHost";
+    case packosErrorAddressUnreachable: return "AddressUnreachable";
+    case packosErrorQueueFull: return "QueueFull";
+    case packosErrorQueueEmpty: return "QueueEmpty";
+    case packosErrorConnectionClosed: return "ConnectionClosed";
+    case packosErrorConnectionResetByPeer: return "ConnectionResetByPeer";
+    case packosErrorPacketFilteredOut: return "PacketFilteredOut";
+    case packosErrorHopLimitExceeded: return "HopLimitExceeded";
+    case packosErrorStoppedForOtherSocket: return "StoppedForOtherSocket";
+    case packosErrorPointerNotAPage: return "PointerNotAPage";
+    case packosErrorYieldedToBlocked: return "YieldedToBlocked";
+    case packosErrorAccessDenied: return "AccessDenied";
+    case packosErrorReadOnlyFilesystem: return "ReadOnlyFilesystem";
+    case packosErrorNotOpenForRead: return "NotOpenForRead";
+    case packosErrorNotOpenForWrite: return "NotOpenForWrite";
+    case packosErrorBufferFull: return "BufferFull";
+    case packosErrorPhysicalMemoryNotWritable: return "PhysicalMemoryNotWritable";
+    case packosErrorPhysicalMemoryRangeTooSmall: return "PhysicalMemoryRangeTooSmall";
+    case packosErrorNotPageAligned: return "NotPageAligned";
+    case packosErrorLogicalAddressInUse: return "LogicalAddressInUse";
+    case packosErrorSysCallWrongArity: return "SysCallWrongArity";
+    case packosErrorSysCallDoesNotExist: return "SysCallDoesNotExist";
+    case packosError386NoSegmentAvailable: return "386NoSegmentAvailable";
+    case packosError386PageDirectoryNotInited: return "386PageDirectoryNotInited";
+    case packosErrorPacketNotInPool: return "PacketNotInPool";
+    case packosErrorNoSuchDevice: return "NoSuchDevice";
+    case packosErrorDeviceNotController: return "DeviceNotController";
+    case packosErrorDeviceTableFull: return "DeviceTableFull";
+    case packosErrorKernelNotRunning: return "KernelNotRunning";
+    case packosErrorKernelSigaction: return "KernelSigaction";
+    case packosErrorKernelGetcontext: return "KernelGetcontext";
+    case packosErrorKernelMalloc: return "KernelMalloc";
+    case packosErrorKernelSigprocmask: return "KernelSigprocmask";
+    case packosErrorKernelSetitimer: return "KernelSetitimer";
+    case packosErrorKernelOpen: return "KernelOpen";
+    case packosErrorKernelWrite: return "KernelWrite";
+    case packosErrorKernelMmap: return "KernelMmap";
+    case packosErrorKernelMmapFlawed: return "KernelMmapFlawed";
+    case packosErrorKernelMunmap: return "KernelMunmap";
+    case packosErrorKernelCantReenterMainLoop: return "KernelCantReenterMainLoop";
+    case packosErrorKernelNoContexts: return "KernelNoContexts";
+    case packosErrorKernelPermissionDenied: return "KernelPermissionDenied";
+    }
+
+  return "<Unknown error>";
+}

@@ -1,0 +1,892 @@
+\documentclass{article}
+\title{Operating Systems II, 91.516-201, Semester Project}
+\author{John Stracke}
+\date{12 May 2006}
+
+\begin{document}
+
+\maketitle
+
+\abstract{I developed a user-space simulation of a microkernel, called
+PackOS, to explore the idea of using IPv6 for all IPC.  The system is
+working, with sufficient application-level functionality to support a
+simple HTTP server.}
+
+\section{Introduction}
+
+Much work has been done on minimal
+microkernels  in the past 15 years,
+starting with Jochen Liedtke's L3.\cite{Liedtke:1993}
+Liedtke's key insight was that first-generation microkernels such as
+Mach, derived from monolithic kernels, had too much inherited baggage
+to be efficient.  By starting from scratch with L3, he was able to
+build a system that made better use of the virtues of microkernels.
+L3, though, turned out to be still too inefficient, so Liedtke started
+over with L4, focusing on high-speed IPC.\cite{Liedtke:AchievedIPC}
+
+PackOS builds on the lessons of L4; it is a minimal microkernel,
+offering only a handful of services.  Its key difference from L4 is
+that the kernel's IPC services are simpler.  L4's IPC takes the form
+of synchronous RPC, with structured messages that can include both
+memory objects and inline byte strings; and its
+``Clans and Chiefs''\cite{Liedtke:ClansAndChiefs}
+model allows for sophisticated routing and filtering of messages.
+PackOS IPC, on the other hand, is asynchronous, unrouted, and
+best-effort--a virtual network rather than an RPC system.  All packets
+in this kernel-area network (KAN) are IPv6; this makes it possible to
+connect to outside services directly, in contrast with RPC-based IPC
+systems, which require a gateway to tunnel RPC requests over the
+external network.
+
+\section{Design}
+
+The PackOS kernel offers three services:
+
+\begin{enumerate}
+\item{The KAN.}
+\item{Interrupt dispatch.}
+\item{Context switching.}
+\end{enumerate}
+
+These services are all designed to be as lightweight as possible.  In
+particular, there is no such thing as an outstanding kernel operation,
+which means that there is no need for kernel threads, which means
+that threading will be much cheaper than in systems where every thread
+requires the allocation of a kernel-space stack.
+
+In addition, all operations should be achievable in \(O(1)\)
+time.\footnote{At present, the kernel performs linear searches for
+packet delivery, which means performance is actually \(O(N)\), where N
+is the maximum number of processes in the system.  However, a minor
+redesign, with hash tables, will enable \(O(1)\) performance.} With a
+guarantee that all kernel calls complete in \(N\) \(\mu\)s, it may
+become feasible to use a big kernel lock even on an SMP
+implementation, vastly simplifying kernel implementation.
+
+\subsection{The KAN.}
+
+All microkernels need high-speed IPC.\cite{Liedtke:AchievedIPC}
+PackOS's IPC mechanism is the KAN, the
+kernel-area network.  The KAN is a virtual link layer, specialized for
+carrying IPv6 packets.  The KAN's link-layer addresses are IPv6
+addresses, and the packets it carries are IPv6 packets prefixed with a
+link-layer header (just the link-layer source and destination
+addresses).  Packet delivery is zero-copy; all packets are
+page-aligned, and the pages are unmapped from the sender and mapped
+into the recipient.\footnote{As will be obvious, this model will pose
+complications when multicast is added.  It is unclear at this time
+what the best solution is.  One way would be to map the packet into
+the recipients read-only, or COW, and maintain a reference count;
+another would be to send all multicast packets to a user-space server,
+which would then retransmit them to subscribers.} This provides the
+efficiency of L4 messages consisting of pages, without the complexity
+of L4's structured messages.  Finally, the fact that the KAN is
+asynchronous means that PackOS should not be vulnerable to the risks
+identified by Jonathon Shapiro.\cite{Shapiro:2003}
+
+User-space applications do not normally call the kernel's KAN
+functions directly; instead, they use user-space libraries which
+expose UDP, or TCP functionality.  These libraries are in turn built
+on the IP library, which makes it possible to implement network
+interface classes to abstract away the differences between link
+layers.  The IP library implements IPv6's network layer, such as IP
+headers and ICMP messages.
+
+\subsection{Context switching}
+
+The PackOS kernel knows nothing about processes; processes are managed
+by the user-space scheduler.  Instead, the kernel exposes facilities
+for creating contexts, manipulating their TLBs, and switching to them;
+the scheduler can use these facilities to provide abstractions such as
+processes and threads.
+
+There is some natural overlap between packet delivery and context
+switching.  When sending a packet, the usual behavior is to yield the
+CPU to the receiving context.  The scheduler is the main exception to
+this behavior; if it yielded the CPU every time it sent a packet, its
+job of scheduling processes would be complicated.
+
+\subsection{Interrupt dispatch}
+
+In PackOS, all drivers are in
+user space, as in MINIX v3\cite{Tanenbaum:2006} and L4.  Drivers
+register with the kernel to handle interrupts; when interrupts occur,
+the kernel delivers them as packets.  In the present implementation,
+this system is used for clock ticks and for a network interface.
+
+Drivers need to be separated
+into top and bottom halves, as in most OSes.\footnote{This separation
+is not present in the current simulator.}
+The bottom half
+receives an interrupt, manages the device, extracts whatever extra
+information the device is trying to send, clears the interrupt, and
+sends a packet to the top half.  When it sends that packet, the kernel
+takes that to mean that the interrupt has been handled, and it's
+safe to reenable interrupts.  The top half, on the other hand,
+handles requests from other processes, manipulates the device, and
+responds to packets from the bottom half.
+
+One driver which may reasonably profit from being placed in kernel
+space is the clock.  MINIX v3 places its clock driver in the kernel;
+after seeing the overhead of implementing my clock in user space, I
+can understand why.  I may have to follow MINIX's lead in this
+respect.
+
+MINIX also offers a solution to an x86-specific problem: how to
+perform I/O instructions.  The x86, with its pedigree rooted
+in Intel's early
+microcontrollers, has an I/O bus separate from the memory bus.  
+The
+I/O bus is not subject to the MMU, and
+the I/O instructions are not available in user mode.
+On the
+PC platform, there are various devices that can be accessed only via
+the I/O bus.  These are mostly the legacy devices, such as PS/2 and
+serial ports; modern PCI devices rarely require use of the I/O bus.
+However, those legacy devices include some important functionality;
+if PackOS is to support them, drivers will need
+to be able to access the I/O bus.  MINIX's solution is to provide
+system calls to perform I/O instructions, with appropriate
+access control.  This is a workable solution; it is clearly less
+efficient than invoking I/O instructions directly,
+but it's more secure--and the legacy devices that require the I/O bus
+are all relatively low-speed, so inefficiency is less of a problem
+than it would be for, say, a Gigabit Ethernet controller.
+
+There may be another solution to the I/O problem.  PCI permits devices
+to request I/O ports; but PCI is not only for x86, and most non-Intel
+CPUs do not have an I/O bus.  For a CPU such as the PowerPC to use
+PCI, its Northbridge, or its PCI controller, must translate
+memory accesses into the I/O accesses expected by the PCI devices.
+Some x86 motherboards may have similar capabilities; if so, PackOS
+could run more efficiently by requesting similar translation.
+
+\section{Achievements}
+
+Currently, PackOS has:
+
+\begin{enumerate}
+\item{Core KAN functionality.}
+\item{An API for implementing IPv6 interfaces.}
+\item{An IPv6 API, based on the interface system.}
+\item{An IPv6 interface based on the KAN.}
+\item{An IPv6 interface for exchanging packets with the outside world
+  via shared memory.}
+\item{The Linux side of the shm-based network interface.}
+\item{A router library, to route packets between the KAN and the
+  outside world.}
+\item{ICMP, UDP, TCP.}
+\item{A basic user-space scheduler.}
+\item{Interrupt handling.}
+\item{A clock interrupt service.}
+\item{A basic file access API, with filesystem drivers.}
+\item{A filesystem driver for a simple file sharing protocol,
+  DumbFS.\footnote{DumbFS is an extremely crude protocol; it runs over
+  UDP, with fixed retransmission intervals.  I didn't have time to
+  implement NFS, so I had to invent something; but I wanted to give it
+  a name that would make it cry out to be replaced.}}
+\item{A Linux-based DumbFS server.}
+\item{An API to enable schedulers to provide timer services.}
+\item{An API for requesting timer services.}
+\item{A basic HTTP/1.0 server.}
+\end{enumerate}
+
+\section{The core PackOS API}
+
+These are the elementary functions of PackOS.  Some are kernel calls;
+some are library functions manipulate data structures to pass to the
+kernel calls.
+
+One piece of background: most PackOS functions take a pointer to a
+PackosError.  It's analogous to the POSIX errno, except that it's not
+a global variable.  There's a library function PackosErrorToString(),
+analogous to POSIX strerror().  As in POSIX, the general custom is
+that functions that return pointers flag an error by returning NULL,
+while functions that return integers flag an error by returning a
+negative number.  When neither is applicable (for example, if the
+function can legitimately return negative numbers), the function
+guarantees to set the error to packosErrorNone on success.  (Other
+functions make no guarantee of the error value on success.)
+
+This document will make reference to objects and subclasses; this is
+an approximation.
+Although PackOS is implemented in C, much of the API is more or less
+object-oriented, using opaque struct pointers.  Some parts, such as
+filesystems and network interfaces, even have a form of subclassing,
+in which the functionality is implemented separately by backends.
+
+\subsection{Context manipulation}
+
+A context is a suspended processor state: basically, the stack,
+registers, and TLBs.  The kernel does not manage contexts; that's up
+to the scheduler.  However, the kernel does need a list of all active
+contexts, in order to be able to deliver packets to them.
+
+Contexts belong to the scheduler's memory space; they are constructed
+and manipulated in user space.  The only context operation for which
+the kernel is involved is context switching.
+
+The scheduler is a privileged process, started at initialization,
+which is able to perform certain extra operations on contexts, such as
+switching to a specified context and manipulating context TLBs.
+
+\subsubsection{Types}
+
+A PackosContext object represents a context.
+
+\subsubsection{System call: PackosContextYield()}
+
+Yields the CPU to the scheduler.  This is the only context-related
+system call available to processes other than the scheduler.
+
+\subsubsection{System call: PackosContextYieldTo()}
+
+Yields the CPU to the specified context.  Available only to the
+scheduler.
+
+\subsubsection{Library function: PackosContextNew()}
+
+Used by the scheduler to construct a new context.
+
+\subsubsection{Library function: PackosContextBlocking()}
+
+Used by the scheduler to check whether a context is blocking (waiting
+for a packet on the KAN) before yielding it the CPU.
+
+\subsubsection{Library function: PackosContextFinished()}
+
+Used by the scheduler to check whether a context has exited.
+
+\subsection{Interrupt handling}
+
+A driver that needs to monitor a particular interrupt registers with
+the kernel, specifying the interrupt number and providing a UDP port
+number.  When the interrupt occurs, the kernel will send a UDP packet
+to that port, containing the interrupt number.
+
+At this time, the interrupt system is a bit sketchy, since the current
+implementation is a simulation.  In particular, there are no
+facilities for controlling which processes can register for which
+interrupts.  Clearly, that will be needed eventually.
+
+\subsubsection{Types}
+
+An InterruptId is an integer which identifies an interrupt.
+InterruptIds are hardware-specific.
+
+\subsubsection{System call: PackosInterruptRegisterFor()}
+
+Used by a driver's bottom half to register for an interrupt.
+
+\subsubsection{System call: PackosInterruptUnregisterFor()}
+
+Used by a driver's bottom half to unregister for an interrupt.
+
+\subsection{Network functions}
+
+\subsubsection{Types}
+
+PackosAddress represents an IPv6 128-bit address.  PackosAddressMask
+represents an address mask, a tuple of (address, length).
+
+PackosPacket represents a packet; it is an IPv6 packet with a KAN
+header consisting of source and destination KAN addresses (which are
+not necessarily the same as the source and destination addresses in
+the IPv6 header, if
+the packet is addressed to or from the outside world).
+
+\subsubsection{Library function: PackosMyAddress()}
+
+Returns the current context's IPv6 address on the KAN.
+
+\subsubsection{Library function: PackosSysAddressMask()}
+
+Returns the address mask for the KAN.
+
+\subsubsection{Library function: PackosSchedulerAddress()}
+
+Returns the KAN address of the scheduler process.
+
+\subsubsection{Library function: PackosPacketGetKernelAddr()}
+
+Returns the KAN address of the kernel.  At this time, there is no
+reason to send packets to the kernel.  However, the kernel sends
+packets to interrupt handlers, so it's a good idea for an interrupt
+handler to double-check the source address of any incoming interrupt
+packet.
+
+\subsubsection{Library function: PackosAddrFromString()}
+
+Parses an IPv6 address string.
+
+\subsubsection{Library function: PackosAddrToString()}
+
+Converts a PackosAddress to a string.
+
+\subsubsection{Library function: PackosAddrEq()}
+
+Tests two PackosAddresses for equality.
+
+\subsubsection{Library function: PackosAddrMatch()}
+
+Tests whether a PackosAddress lies within a given PackosAddressMask.
+
+\subsubsection{Library function: PackosAddrIsMcast()}
+
+Tests whether a PackosAddress is a multicast address.
+
+\subsubsection{System call: PackosPacketAlloc()}
+
+Allocates a packet.  A system call is required because packets are
+allocated as pages, so that they can be remapped from sender to
+receiver, instead of being copied.  However, for a performant
+implementation, it is likely that some sort of pooling will be
+required, to reduce the frequency of system calls.  Such pooling
+should, of course, be transparent to the application programmer.
+
+\subsubsection{System call: PackosPacketFree()}
+
+Frees a packet allocated with PackosPacketAlloc().
+
+\subsubsection{System call: PackosPacketSend(()}
+
+Sends a packet.  The packet must have been allocated with
+PackosPacketAlloc(), so that it's a separately mapped page, which can
+be transferred to the recipient's memory map.
+
+The call includes a flag indicating whether to yield the CPU to the
+recipient.  Applications almost never call PackosPacketSend()
+themselves; instead, they call the IP interface library, which
+abstracts away the differences between the KAN and other interfaces.
+If they need to specify the yield flag, they can do so on a
+per-interface basis.  The per-interface default is to yield to the
+recipient; but the scheduler sets the flag not to yield, because that
+would interfere with its schedule.
+
+\subsubsection{System call: PackosPacketReceive()}
+
+Returns a packet received on the KAN; if none is available, blocks
+until one arrives (or until an error occurs).  The packet received is
+guaranteed to have been allocated with PackosPacketAlloc().
+
+The kernel guarantees that the KAN source address has not been
+spoofed.
+
+\subsubsection{System call: PackosPacketReceiveOrYieldTo()}
+
+Like PackosPacketReceive(); but, if it blocks, it yields to a
+specified context (instead of the scheduler).  For use only by the
+scheduler.
+
+\subsection{Paging functions}
+
+These functions manage a context's TLB.  They're not complete; I
+designed them before we covered TLBs in class, which means that
+they're missing some important capabilities, such as controlling write
+access.  In any event, they aren't fully implemented in the PackOS
+simulation.
+
+Note that all these functions are library functions; they manipulate
+the user-space data structures from which the TLBs are updated during
+a context switch.  However, they are available only to the scheduler,
+since that's the only process which has the PackosContexts.
+
+\subsubsection{Types}
+
+A PackosPageEntry represents an entry in the TLB (a range of pages).
+
+\subsubsection{Library function: PackosPageEntryNew()}
+
+Allocates a new PackosPageEntry; specifies the location and size in
+physical memory, and whether or not it's writable.
+
+\subsubsection{Library function: PackosPageEntryDelete()}
+
+Deletes a PackosPageEntry.
+
+\subsubsection{Library function: PackosPageEntryInstall()}
+
+Installs a PackosPageEntry into a context's TLB.
+
+\subsubsection{Library function: PackosPageEntryUninstall()}
+
+Removes a PackosPageEntry from a context's TLB.
+
+\subsubsection{Library function: PackosPageEntryTransfer()}
+
+Moves a PackosPageEntry from one context's TLB to another's.
+
+\subsubsection{Library function: PackosPageEntryGetLength()}
+
+Gets the length of an entry.
+
+\subsubsection{Library function: PackosPageEntryGetAddr()}
+
+Gets the virtual address to which an entry is mapped.
+
+\subsubsection{Library function: PackosPageAlloc()}
+
+Allocates a new PackosPageEntry for a page-aligned range of physical
+memory of a given size.
+
+\subsubsection{Library function: PackosEntryOfPage()}
+
+Looks up the PackosPageEntry to which a given virtual address
+corresponds.
+
+\section{Higher-level libraries}
+
+In addition to the core API, there are various libraries which layer
+additional functionality on top of the kernel (most notable IPv6
+options, ICMP, UDP, and TCP).
+
+\subsection{The IPv6 interface library}
+
+The KAN system calls are adequate for the KAN, but PackOS needs other
+network interfaces.  For example, the current simulation has a network
+interface based on shared memory and POSIX signals; a hardware-based
+implementation would need to interface to, say, PCI Ethernet devices.
+The IPv6 interface library provides a common abstraction for these
+various link layers (in this view, the KAN is a link layer),
+permitting us to build higher-level protocols on top of IP without
+worrying about the link layer.
+
+\subsubsection{Types}
+
+An IpIface object represents a network interface; it can be used to send and
+receive packets.  The core IpIface library handles packet queueing;
+the driver modules interface to the underlying link layer.
+
+\subsubsection{IpIfaceNativeNew()}
+
+Constructs a native IpIface, one that interfaces to the KAN link
+layer.  It is not possible to construct more than one per process; the
+second attempt will report an error.
+
+\subsubsection{IpIfaceNativeSetYieldToRecipient()}
+
+Given a native IpIface, sets the flag
+indicating whether or not to yield the CPU to the recipient when
+sending a packet.
+
+\subsubsection{IpIfaceNativeSetNextYieldTo()}
+
+Scheduler only: set the PackosContext to which to yield the CPU the
+next time we block waiting for a packet on a native IpIface.
+
+\subsubsection{IpIfaceShmNew()}
+
+In the simulation, allocates an IpIface for talking over a shared
+memory segment.
+
+\subsection{The IP library}
+
+The IP library is responsible for sending and receiving packets over
+network interfaces.  It implements core IPv6 functionality such as
+headers and ICMP, and also includes functions for manipulating
+packets.
+
+\subsubsection{Types}
+
+An IpHeader is a union which contains the type of, and a pointer to,
+an IPv6 header.  The various supported types of headers are defined in
+<ip.h>.
+
+An IpHeaderIterator is an iterator over the headers in a packet.
+
+\subsubsection{IpMcastJoin()}
+
+Join a multicast group.  Unimplemented in the simulation.
+
+\subsubsection{IpMcastLeave()}
+
+Leave a multicast group.  Unimplemented in the simulation.
+
+\subsubsection{IpSendOn()}
+
+Send a packet on a given interface.
+
+\subsubsection{IpSend()}
+
+Send a packet on an unspecified interface; the library determines the
+best one to use.
+
+\subsubsection{IpReceiveOn()}
+
+Receive a packet on a given interface.
+
+\subsubsection{IpReceive()}
+
+Receive a packet on any interface.
+
+\subsubsection{IpPacketFromNetworkOrder()}
+
+Convert a packet's IPv6 headers from network order to host
+order.  Does not include TCP options.
+
+\subsubsection{IpPacketToNetworkOrder()}
+
+Convert a packet's IPv6 headers from host order to network
+order.  Does not include TCP options.
+
+\subsubsection{IpGetDefaultRoute()}
+
+Get the address of the default gateway (and the IpIface on which to
+send to reach that address).
+
+\subsubsection{IpSetDefaultRoute()}
+
+Set the address of the default gateway (and the IpIface on which to
+send to reach that address).
+
+\subsubsection{IpHeaderIteratorNew()}
+
+Returns an IpHeaderIterator for iterating over the IPv6 headers of a
+given packet.
+
+\subsubsection{IpHeaderIteratorDelete()}
+
+Deletes an IpHeaderIterator.
+
+\subsubsection{IpHeaderIteratorNext()}
+
+Takes an IpHeaderIterator; returns a pointer to the next IpHeader in
+the packet, or NULL if none.
+
+\subsubsection{IpHeaderIteratorHasNext()}
+
+Takes an IpHeaderIterator; returns true if IpHeaderIteratorNext()
+would return non-NULL.
+
+\subsubsection{IpHeaderIteratorRewind()}
+
+Resets an IpHeaderIterator back to the first header in the packet.
+
+\subsubsection{IpHeaderSeek()}
+
+Takes a packet; returns a pointer to the first IpHeader of the given
+type in the packet, or NULL if there is none.
+
+\subsubsection{IpHeaderAppend()}
+
+Appends an IpHeader to a packet.
+
+\subsubsection{IpPacketData()}
+
+Returns a pointer to the payload of the packet (after all the
+headers).
+
+\subsection{UDP}
+
+\subsubsection{Types}
+
+A UdpSocket is an object for sending and receiving UDP packets.
+
+\subsubsection{UdpSocketNew()}
+
+Constructs a new UdpSocket.
+
+\subsubsection{UdpSocketClose()}
+
+Closes a UdpSocket.
+
+\subsubsection{UdpSocketBind()}
+
+Binds a UdpSocket to a given port.  Semantics are analogous to POSIX
+bind().
+
+\subsubsection{UdpPacketNew()}
+
+Constructs a packet with fields filled out for sending from a given
+UdpSocket.
+
+\subsubsection{UdpSocketSend()}
+
+Sends a UDP packet from a given UdpSocket.
+
+\subsubsection{UdpSocketReceive()}
+
+Returns a UDP packet received on a given UdpSocket.
+
+\subsubsection{UdpSocketReceivePending()}
+
+Checks to see whether or not there's a packet in the receive queue of
+a UdpSocket.
+
+\subsection{TCP}
+
+\subsubsection{Types}
+
+A TcpSocket is an object for sending and receiving TCP packets.
+
+\subsubsection{TcpSocketNew()}
+
+Constructs a new TcpSocket.
+
+\subsubsection{TcpSocketClose()}
+
+Closes a TcpSocket.
+
+\subsubsection{TcpSocketBind()}
+
+Binds a TcpSocket to a given port.  Semantics are analogous to POSIX
+bind().
+
+\subsubsection{TcpSocketConnect()}
+
+Connects a TcpSocket to a given remote address and port.  Blocks until
+the connection succeeds (or fails).
+
+\subsubsection{TcpSocketListen()}
+
+Configures a TcpSocket to listen for connections.  At this time, there
+is no analogue to the {\tt backlog} argument to POSIX's listen(2); the
+backlog is fixed at a size of 1.
+
+\subsubsection{TcpSocketAccept()}
+
+Given a listening TcpSocket, blocks until there is an incoming
+connection and returns a new TcpSocket for it.
+
+\subsubsection{TcpSocketAcceptPending()}
+
+Checks to see whether there's a pending connection; that is, whether
+TcpSocketAccept() would return non-NULL without blocking.
+
+\subsubsection{TcpSocketSend()}
+
+Sends data on a connected TcpSocket.
+
+\subsubsection{TcpSocketReceive()}
+
+Receives data on a connected TcpSocket.  Blocking.
+
+\subsubsection{TcpSocketReceivePending()}
+
+Checks to see whether there is pending data to receive on a connected
+TcpSocket.
+
+\subsubsection{TcpPoll()}
+
+Gives the TCP stack a chance to check for packets.  Shouldn't be
+necessary, but it is, for now.
+
+\subsection{File I/O}
+
+An API, very crude for now, for reading and writing files.  There is
+a filesystem abstraction layer; filesystem implementations do the work
+of file I/O, and construct File objects which represent open files.
+At present, it is necessary to open each filesystem explicitly; an
+obvious improvement would be to create an overall filesystem with
+mounting operations.
+
+At present, there is only one filesystem, implementing a crude file
+sharing protocol called DumbFS.
+
+\subsubsection{Types}
+
+A FileSystem object represents a filesystem; a File object represents
+an open file.  Basically, a FileSystem defines or more more subclasses
+of File, and acts as a File factory.
+
+\subsubsection{FileSystemDumbFSNew()}
+
+Constructs a FileSystem that speaks the DumbFS protocol.
+
+\subsubsection{FileSystemClose()}
+
+Closes down a FileSystem.
+
+\subsubsection{FileOpen()}
+
+Given a FileSystem, a path, and read/write flags, opens a file.
+
+\subsubsection{FileClose()}
+
+Closes a file.
+
+\subsubsection{FileRead()}
+
+Reads from a file; semantics similar to POSIX read(), except all
+operations are blocking.
+
+\subsubsection{FileWrite()}
+
+Writes to a file; semantics similar to POSIX write(), except all
+operations are blocking.
+
+\subsection{Timer API}
+
+Used to register for timer events, sent by the scheduler (since the
+scheduler receives clock ticks from the kernel).  Timer notifications
+are sent over UDP.  Used by TCP and DumbFS to manage their
+retransmissions.
+
+There is one problem with this system: since TCP relies on timers, the
+timer control protocol can't use TCP.  More generally, it can't
+involve any sort of timeout-based retransmissions (bootstrap problem).
+I'm sure there's some sort of solution for this; perhaps the scheduler
+can just assume that every process wants a timer for controlling the
+timer control protocol.
+
+\subsubsection{Types}
+
+A Timer object represents a timer in use.
+
+\subsubsection{TimerNew()}
+
+Takes a UdpSocket (to which notifications will be sent), the numbers
+of seconds and microseconds between ticks, an arbitrary ID number to
+include in the notification packets, and whether or not to repeat the
+ticks (if not, only one will be sent).  Returns a new Timer.
+
+\subsubsection{TimerClose()}
+
+Shuts down a given Timer; asks the server to stop sending
+notifications.
+
+\section{Limitations}
+
+Not all of PackOS's capabilities are full-featured.  The following
+limits remain:
+
+\begin{enumerate}
+\item{The IPv6 stack does not support fragments,
+routing headers, or multicast.}
+\item{The ICMP library
+does not support all ICMP features, and is not fully connected to the
+TCP library.}
+\item{The paging system is essentially unimplemented.  The simulator
+  has the beginning of an implementation based on mmap(); but it was
+  put off in order to complete the TCP/IP stack on time.}
+\item{There is no support for threads (not
+much point, in the absence of memory protection).}
+\item{The basic scheduler doesn't have a concept of process priority.
+  As a result, the idle process gets a timeslice even when other
+  processes need the CPU.}
+\item{The file API
+supports only open, read, write, and close; there's nothing like seek
+(although the DumbFS protocol could support it), delete, rename, or
+stat.}
+\item{The DumbFS protocol is, er, named honestly.
+(It was written before the TCP implementation,
+when I wasn't sure I would be able to get TCP done in time.)  I
+should implement NFS instead.}
+\end{enumerate}
+
+More seriously, the TCP implementation appears to have some bugs which
+mean that the HTTP server cannot serve up any file that won't fit into
+a single TCP segment (along with its HTTP headers).  When a client
+requests a file that's too large, the client gets no data (although
+tcpdump shows that the data is sent), and the HTTP server enters some
+sort of invalid state, where it cannot answer any further requests.
+For this reason, the sample pages included are quite small.
+
+Finally, there are pervasive performance problems; all lookups are
+linear searches.  Due to this overhead (and due to the fact that it
+was developed largely on relatively slow machines), the system clock
+runs at a resolution of 1/10 of a second.
+
+\section{Future plans}
+
+I intend to develop PackOS further, and submit it as a master's
+thesis.  My future development plans include:
+
+\begin{enumerate}
+\item{Cleanup work:
+\begin{enumerate}
+\item{Fix the bug(s) in TCP.  This one is most critical;
+  until I can get large chunks of data in and out reliably, it will be
+  difficult to go further.}
+\item{Implement missing features from IPv6 and ICMP.}
+\item{Implement TCP Slow Start and the LFN extensions.}
+\item{Implement TCP Path MTU Discovery.}
+\item{Provide a single unified ``send a packet and wait to receive a
+  packet'' operation, like L4,
+  to cut down on context switching
+  overhead.}
+\item{Tackle the performance problems.  One significant step would be
+  to remove some of the diagnostic messages I now longer need.  More
+  seriously, I intend to modify the data structures and algorithms to
+  ensure that all kernel operations can complete in \(O(1)\) time.}
+\item{Expand the filesystem API to include richer functionality.}
+\item{Implement a configuration protocol.}
+\item{Implement a routing protocol.  At present, the IP layer
+  has a concept of a default route, but that's it.  Also, the KAN
+  address of the router is made available to other processes via a
+  global variable, which is a hack that won't work in the presence of
+  protected memory.}
+\item{Replace DumbFS with something sensible.}
+\end{enumerate}
+}
+
+\item{New development:
+\begin{enumerate}
+\item{Provide smoother APIs for the UDP and TCP libraries.  Something
+  akin to select() would help a lot.}
+\item{Port it to real hardware.  x86 is the obvious initial candidate,
+  although I might try PowerPC and/or ARM as well.}
+\item{Implement memory protection.}
+\item{Implement paging.}
+\item{Implement threading.}
+\item{Provide a POSIX layer.}
+\end{enumerate}
+}
+\end{enumerate}
+
+\section{Lessons Learned}
+
+The primary lesson learned here is that the basic idea of PackOS is
+feasible; it is possible to build an IPv6-based microkernel which is
+capable of supporting at least one real application.
+
+One point in which PackOS's current design is insufficiently general
+is that contexts and KAN addresses are coupled.  For greater
+flexibility, it may be best to decouple them, so that multiple
+contexts can share an address (for threading), or one context can have
+multiple addresses (for Mobile IP forwarding).
+
+Further, the kernel is quite small, only about 2650 lines, which
+compiles to about 26K (on PowerPC).  Of course, the final kernel may
+be somewhat larger, but I would be surprised to see it increase by as
+much as a factor of two, since the current kernel supports all of the
+planned functionality except TLB management and x86 I/O instructions.
+Combined with the kernel's low memory utilization (due largely to the
+absence of kernel threads), this means that a very small amount of
+memory will have to be reserved for the kernel, perhaps as little as
+64K.  (On x86, at least, there will have to be stacks for use in
+exceptions, which will add to the total.) This will mean more memory
+available to applications; and, by using fewer TLBs, may reduce the
+cost of context switches.
+
+\begin{thebibliography}{10}
+\bibitem{Liedtke:1993}
+Jochen Liedtke,
+\newblock{Improving IPC by Kernel Design},
+\newblock{appeared at 14th SOSP, 1993}
+
+\bibitem{Liedtke:ClansAndChiefs}
+Jochen Liedtke,
+\newblock{Clans \& Chiefs},
+\newblock{Architektur von Rechensystemen, 1991}
+
+\bibitem{Liedtke:AchievedIPC}
+Jochen Liedtke, Kevin Elphinstone, Sebastian Sch\"onberg, Hermann
+H\"artig, Gernot Heiser, Nayeem Islam, Trent Jaeger,
+\newblock{Achieved IPC Performance (Still the Foundation for
+  Extensibility)},
+\newblock{HotOS IV, 1997}
+
+\bibitem{Shapiro:2003}
+Jonathan S. Shapiro,
+\newblock{Vulnerabilities in Synchronous IPC Designs},
+\newblock{IEEE Symposium on Security and Privacy, 2003}
+
+\bibitem{Tanenbaum:2006}
+Andrew Tanenbaum,
+\newblock{Can We Make Operating Systems Reliable and Secure?},
+\newblock{IEEE Computer, May 2006, pp. 44-51}
+
+\end{thebibliography}
+
+\end{document}

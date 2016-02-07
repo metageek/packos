@@ -1,0 +1,38 @@
+contextK.c:
+
+int PackosKernelSetIdleContext(PackosContext idleContext_,
+                               PackosError* error)
+PackosContext PackosKernelContextCurrent(PackosError* error)
+void PackosContextYield(void)
+bool PackosContextBlocking(PackosContext context,
+                           PackosError* error)
+bool PackosContextFinished(PackosContext context,
+                           PackosError* error)
+void PackosContextYieldTo(PackosContext to,
+                          PackosError* error)
+char* PackosKernelContextGetArena(PackosContext context,
+                                  SizeType* size,
+                                  PackosError* error)
+void* PackosKernelContextGetIfaceRegistry(PackosContext context,
+                                          PackosError* error)
+int PackosKernelContextSetIfaceRegistry(PackosContext context,
+                                     void* ifaceRegistry,
+                                     void* oldIfaceRegistry,
+                                     PackosError* error)
+
+interruptsK.c:
+int PackosInterruptRegisterFor(PackosInterruptId id,
+                               uint16_t udpPort,
+                               PackosError* error)
+int PackosInterruptUnregisterFor(PackosInterruptId id,
+                                 PackosError* error)
+int PackosPacketSend(PackosPacket* packet,
+                     bool yieldToRecipient,
+                     PackosError* error)
+PackosPacket* PackosPacketReceive(PackosError* error)
+PackosPacket* PackosPacketReceiveOrYieldTo(PackosContext context,
+                                           PackosError* error)
+PackosPacket* PackosPacketAlloc(unsigned int* sizeOut,
+                                PackosError* error)
+void PackosPacketFree(PackosPacket* packet,
+                      PackosError* error)

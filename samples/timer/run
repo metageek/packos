@@ -1,0 +1,7 @@
+#!/bin/bash
+
+mount /mnt/packos
+cp sample-timer  /mnt/packos/kernel
+umount /mnt/packos
+
+qemu -d int -fda ../../kernel/floppy.img -hda ../../kernel/hd-grub.img -boot c

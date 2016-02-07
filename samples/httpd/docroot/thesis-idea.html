@@ -1,0 +1,47 @@
+<html>
+<head>
+<title>PackOS: Thesis Idea</title>
+</head>
+
+<body>
+<h1>PackOS: Thesis Idea</h1>
+
+<p>My thesis idea is to create a microkernel. When I read Joachim
+Liedtke's papers on L4, the ideas made sense to me, except that the
+IPC system struck me as excessively complicated. I started sketching
+out ideas for a microkernel that would be more minimal than L4, with
+IPC based on IPv6. In 91.516, I've started implementing this
+microkernel, albeit emulated in a Linux process. I call it PackOS.
+</p>
+
+<p>PackOS is highly minimal. The only kernel services are context
+switching, IPv6 packet delivery, and interrupt dispatch. Along with
+lock-free programming techniques, the result should be a system that
+spends very little time in the kernel, which makes for some
+interesting simplifications. There are no kernel threads; everything
+done in the kernel is O(1), and runs to completion before returning to
+user space. Also, it is my hope that minimizing time spent in the
+kernel will allow me to use a monolithic kernel lock, even on an SMP
+machine. The result is that the trusted kernel code can be very small
+and very simple. All drivers will live in user space (similar to L4,
+Minix 3.0, and some other modern systems); interrupts will be
+delivered to the drivers as packets.
+</p>
+
+<p>As of this writing, my user-space PackOS has basic IPv6, UDP, and
+the beginnings of TCP. It has an interface to the outside network, via
+shared memory and the Linux TUN driver, and a primitive filesystem. My
+goal for my 91.516 project is to complete the TCP implementation and
+add an HTTP server.
+</p>
+
+<p>For my thesis, I would port PackOS to native hardware (probably x86
+and PowerPC), and develop it enough to be able to understand where it
+lies in the flexibility/performance tradeoff. (A nice goal would be to
+implement a POSIX layer, but I'm not sure that would teach me enough
+to be worth the extensive effort.) I would, of course, have to do some
+research on existing microkernels, such as L4, Minix, and Coyotos.
+</p>
+
+</body>
+</html>
