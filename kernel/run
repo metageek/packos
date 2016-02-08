@@ -2,6 +2,7 @@
 
 mount /mnt/packos
 cp kernel  /mnt/packos
+sleep 1
 umount /mnt/packos
 
-~/incoming/os/qemu/qemu-0.8.2/i386-softmmu/qemu -s -d int,pcall -fda floppy.img -hda hd-grub.img -boot c
+qemu-system-i386 -s -d int,pcall -fda floppy.img -hda hd-grub.img -boot c

@@ -2,6 +2,7 @@
 
 mount /mnt/packos
 cp sample-timer  /mnt/packos/kernel
+sleep 1
 umount /mnt/packos
 
-qemu -d int -fda ../../kernel/floppy.img -hda ../../kernel/hd-grub.img -boot c
+qemu-system-i386 -d int -fda ../../kernel/floppy.img -hda ../../kernel/hd-grub.img -boot c

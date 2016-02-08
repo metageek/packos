@@ -1,3 +1,3 @@
 depth:=..
-subdirs:=iface-shm-outside dumbfs-outside
+subdirs:=dumbfs-outside #iface-shm-outside
 include $(depth)/make.mk

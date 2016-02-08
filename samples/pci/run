@@ -2,9 +2,7 @@
 
 mount /mnt/packos
 cp sample-pci  /mnt/packos/kernel
+sleep 1
 umount /mnt/packos
 
-#QEMU=~francis/incoming/os/qemu/qemu-0.8.2/i386-softmmu/qemu
-QEMU=qemu
-
-$QEMU -s -d int -net nic,macaddr=00:e0:b8:ac:3d:25,model=rtl8139 -net tap -fda ../../kernel/floppy.img -hda ../../kernel/hd-grub.img -boot c
+qemu-system-i386 -s -d int -net nic,macaddr=00:e0:b8:ac:3d:25,model=rtl8139 -net tap,ifname=tap0 -fda ../../kernel/floppy.img -hda ../../kernel/hd-grub.img -boot c
