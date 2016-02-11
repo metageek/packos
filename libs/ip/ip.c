@@ -276,6 +276,7 @@ int IpSendOn(IpIface iface, PackosPacket* packet, PackosError* error)
 
 static PackosPacket*
 IpReceiveOnUnfiltered(IpIface iface,
+                      byte protocolExpected,
                       byte* protocolP,
                       IpHeaderRouting0** routingHeader,
                       PackosError* error)
@@ -291,7 +292,7 @@ IpReceiveOnUnfiltered(IpIface iface,
       return 0;
     }
 
-  packet=IpIfaceDequeue(iface,0,error);
+  packet=IpIfaceDequeue(iface,protocolExpected,error);
   if (packet)
     {
       if (IpPacketFromNetworkOrder(packet,error)<0)
@@ -318,34 +319,49 @@ IpReceiveOnUnfiltered(IpIface iface,
       return 0;
     }
 
-  packet=(iface->receive)(iface,error);
-  if (!packet)
-    {
-      if ((*error)!=packosErrorContextYieldedBack)
-        {
-          PackosError tmp;
-          UtilPrintfStream(errStream,&tmp,
-                           "IpReceiveOnUnfiltered(): iface->receive(): %s\n",
-                           PackosErrorToString(*error)
-                           );
-        }
-      if ((*error)==packosErrorHopLimitExceeded)
-	*error=packosErrorNone;
-      return 0;
-    }
+  while (true) {
+    packet=(iface->receive)(iface,error);
+    if (!packet)
+      {
+        if ((*error)!=packosErrorContextYieldedBack)
+          {
+            PackosError tmp;
+            UtilPrintfStream(errStream,&tmp,
+                             "IpReceiveOnUnfiltered(): iface->receive(): %s\n",
+                             PackosErrorToString(*error)
+                             );
+          }
+        if ((*error)==packosErrorHopLimitExceeded)
+          *error=packosErrorNone;
+        return 0;
+      }
 
-  if (IpPacketFromNetworkOrder(packet,error)<0)
-    {
+    if (IpPacketFromNetworkOrder(packet,error)<0)
+      {
+        PackosError tmp;
+        PackosPacketFree(packet,&tmp);
+        UtilPrintfStream(errStream,&tmp,
+                         "IpReceiveOnUnfiltered(): "
+                         "IpPacketFromNetworkOrder(): %s\n",
+                         PackosErrorToString(*error)
+                         );
+        return 0;
+      }
+
+    protocol=packet->ipv6.nextHeader;
+    if (protocol != protocolExpected) {
       PackosError tmp;
-      PackosPacketFree(packet,&tmp);
-      UtilPrintfStream(errStream,&tmp,
-              "IpReceiveOnUnfiltered(): IpPacketFromNetworkOrder(): %s\n",
-              PackosErrorToString(*error)
-              );
-      return 0;
+      if (IpIfaceEnqueue(iface,packet,&tmp)<0) {
+        *error = tmp;
+        UtilPrintfStream(errStream,&tmp,
+                         "IpReceiveOnUnfiltered(): IpIfaceEnqueue(): %s\n",
+                         PackosErrorToString(*error));
+        return 0;
+      }
+    } else {
+      break;
     }
-
-  protocol=packet->ipv6.nextHeader;
+  }
 
   it=IpHeaderIteratorNew(packet,error);
   if (!it)
@@ -388,12 +404,13 @@ IpReceiveOnUnfiltered(IpIface iface,
                     byte optionLen=optionBase[1];
                     byte optionCategory=optionType>>6;
                     UtilPrintfStream(errStream,error,
-                            "IpReceiveOnUnfiltered(): %s header: unimplemented optionType %u\n",
-                            (cur->kind==ipHeaderTypeDestination
-                             ? "Destination"
-                             : "Hop-By-Hop"
-                             ),
-                            (unsigned int)optionType);
+                                     "IpReceiveOnUnfiltered(): %s header: "
+                                     "unimplemented optionType %u\n",
+                                     (cur->kind==ipHeaderTypeDestination
+                                      ? "Destination"
+                                      : "Hop-By-Hop"
+                                      ),
+                                     (unsigned int)optionType);
 
                     switch (optionCategory)
                       {
@@ -466,7 +483,9 @@ PackosPacket* IpReceiveOn(IpIface iface,
 {
   byte protocol;
   PackosPacket* res
-    =IpReceiveOnUnfiltered(iface,&protocol,routingHeader,error);
+    =IpReceiveOnUnfiltered(iface,
+                           protocolExpected,&protocol,
+                           routingHeader,error);
   if (!res)
     {
       if ((*error)!=packosErrorContextYieldedBack)
@@ -896,7 +915,6 @@ int IpHeaderAppend(PackosPacket* packet,
                    IpHeader* header,
                    PackosError* error)
 {
-  IpHeaderIterator it;
   IpHeader* last;
   byte* newBase;
   int len;
@@ -931,11 +949,7 @@ int IpHeaderAppend(PackosPacket* packet,
 
       newBase=IpHeaderGetNextPos(last,error);
       if (!newBase)
-        {
-          PackosError tmp;
-          IpHeaderIteratorDelete(it,&tmp);
-          return -1;
-        }
+        return -1;
 
       switch (last->kind)
         {
