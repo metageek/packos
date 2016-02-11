@@ -5,5 +5,5 @@ cp sample-simple  /mnt/packos/kernel
 sleep 1
 umount /mnt/packos
 
-qemu-system-i386 -d int -net nic,model=rtl8139 -net user -fda ../../kernel/floppy.img -hda ../../kernel/hd-grub.img -boot c
+qemu-system-i386 -d int -net nic,model=rtl8139 -net user -fda ../../kernel/floppy.img -hda ../../kernel/hd-grub.img -boot c -debugcon file:simple.log
 
