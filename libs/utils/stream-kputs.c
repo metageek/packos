@@ -11,6 +11,11 @@ static int CloseMethod(Stream stream,
   return 0;
 }
 
+static inline void outb(uint16_t port, byte v)
+{
+  asm volatile ("outb %0, %1" : : "a"(v), "Nd"(port) );
+}
+
 static int WriteMethod(Stream stream,
                        const void* buffer_,
                        uint32_t count,
@@ -19,8 +24,10 @@ static int WriteMethod(Stream stream,
   extern void kputc(char);
   const char* buffer=(const char*)buffer_;
   int i;
-  for (i=0; i<count; i++)
+  for (i=0; i<count; i++) {
     kputc(buffer[i]);
+    outb(0xe9, buffer[i]);
+  }
 
   return count;
 }
