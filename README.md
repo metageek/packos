@@ -6,7 +6,14 @@ which I was developing a pseudo-OS that lived inside a Linux process;
 later, I ported it to i486.  The catch was that I never got memory
 protection working--and, when I went to implement it, I found that,
 back at the beginning, I had written code that shared data across
-process boundaries.  So now I'm dusting it off and fixing that.
+process boundaries.  I went to dust it off and make it work, but
+discovered that it didn't work with modern versions of QEMU, and I
+never wrote proper unit tests, or even regression tests, so I had
+nowhere to start.  I'm starting over in the repository packos2, with a
+framework for writing unit tests I can run inside QEMU and export the
+results to the outside; it'll probably import bits and pieces from
+this repository, but it'll mostly be new work.  This repository will
+be left around mostly for me to refer to.
 
 To build PackOS, you'll need gcc with support for compiling 32-bit
 binaries.
