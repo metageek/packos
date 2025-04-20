@@ -8,7 +8,7 @@ protection working--and, when I went to implement it, I found that,
 back at the beginning, I had written code that shared data across
 process boundaries.
 
-Recnetly, I went to dust it off and make it work, but discovered that
+Recently, I went to dust it off and make it work, but discovered that
 it didn't work with modern versions of QEMU, and I never wrote proper
 unit tests, or even regression tests, so I had nowhere to start.  I'm
 starting over in the repository packos2, with a framework for writing
