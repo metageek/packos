@@ -4,7 +4,7 @@ PackOS is a microkernel where all IPC is IPv6.
 I developed it around 2006-2007.  It started as a class project, in
 which I was developing a pseudo-OS that lived inside a Linux process;
 later, I ported it to i486 for my master's thesis.  The catch was that
-I never got memory protection working--and, when I went to implement
+I never got memory protection working—and, when I went to implement
 it, I found that, back at the beginning, I had written code that
 shared data across process boundaries.
 
@@ -59,6 +59,6 @@ ifconfig tap0 up add fe80::3602:86ff:fe68:bcef/64 # arbitrarily chosen
 
 Unfortunately, this one currently doesn't work (it used to, before I
 let PackOS go fallow for 9 years...); it gives an error message:
-"can't find IRQ router.  No IRQs will be available." -- and, without
+"can't find IRQ router.  No IRQs will be available."—and, without
 any IRQs, it can't register to talk to the virtual Ethernet card QEMU
 is providing, so it quits.
