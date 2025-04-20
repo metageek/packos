@@ -3,10 +3,10 @@ PackOS is a microkernel where all IPC is IPv6.
 
 I developed it around 2006-2007.  It started as a class project, in
 which I was developing a pseudo-OS that lived inside a Linux process;
-later, I ported it to i486.  The catch was that I never got memory
-protection working--and, when I went to implement it, I found that,
-back at the beginning, I had written code that shared data across
-process boundaries.
+later, I ported it to i486 for my master's thesis.  The catch was that
+I never got memory protection working--and, when I went to implement
+it, I found that, back at the beginning, I had written code that
+shared data across process boundaries.
 
 Recently, I went to dust it off and make it work, but discovered that
 it didn't work with modern versions of QEMU, and I never wrote proper
